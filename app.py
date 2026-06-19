@@ -177,11 +177,17 @@ def lfm_export():
         deadline = float(request.form.get("deadline", "60"))
     except ValueError:
         deadline = 60.0
+    try:
+        max_rows = int(request.form.get("max_rows", "20"))
+        if max_rows <= 0:
+            max_rows = None        # 0 / blank => all rows
+    except ValueError:
+        max_rows = 20
 
     data = f.read()
     try:
         cards, mapping, summary = asyncio.run(
-            asyncio.to_thread(lfm.build_cards, data, f.filename, deadline, 8)
+            asyncio.to_thread(lfm.build_cards, data, f.filename, deadline, 8, max_rows)
         )
     except Exception as e:
         return render_template("index.html",

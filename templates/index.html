@@ -54,6 +54,9 @@
         the export itself — no external scraping, no blocks.</p>
       <input type="file" id="lfmfile" name="file" accept=".xlsx,.xlsm,.csv">
       <div class="row">
+        <label style="margin:0;">Rows</label>
+        <input type="number" name="max_rows" value="20" min="0" max="2000"
+               title="How many rows to process (0 = all)">
         <label style="margin:0;">Deadline (s)</label>
         <input type="number" name="deadline" value="60" min="10" max="300">
         <button type="submit">Build LFM cards</button>

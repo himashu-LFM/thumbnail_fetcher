@@ -54,12 +54,21 @@ FIELD_CANDIDATES: Dict[str, List[str]] = {
                  "url", "link"],
     "platform": ["channeltype", "socialnetwork", "channel", "platform", "network",
                  "source"],
-    "brand": ["brandname", "accountname", "profilename", "pagename", "brand",
-              "account", "profile", "property", "page"],
-    "post_type": ["posttype", "mediatype", "contenttype", "type"],
-    "post_format": ["postformat", "format", "subtype", "posttypedetail"],
+    # author/nickname cover listening exports (YouScan); brand/account cover LFM.
+    "brand": ["author", "nickname", "displayname", "username", "brandname",
+              "accountname", "profilename", "pagename", "brand", "account",
+              "profile", "property", "page"],
+    # badge 1 (media kind): "Content Types" (YouScan) or "Post Type" (LFM).
+    "post_type": ["contenttypes", "contenttype", "mediatype", "posttype", "type"],
+    # badge 2 (format): "Format" (LFM) or "Source specific format" (YouScan).
+    "post_format": ["postformat", "format", "subtype", "posttypedetail",
+                    "sourcespecificformat"],
+    # primary caption = the post body. Title/description are a fallback
+    # (caption_alt) because in listening exports tweets put the body in "Text"
+    # while videos put it in "Title".
     "caption": ["postcaption", "postmessage", "posttext", "caption", "message",
-                "description", "text", "content", "body"],
+                "text", "content", "body"],
+    "caption_alt": ["title", "headline", "description"],
     "date": ["publisheddate", "publishdate", "postdate", "publishtime",
              "posttime", "createdtime", "datetime", "publishedtime",
              "published", "date", "timestamp"],
@@ -68,11 +77,13 @@ FIELD_CANDIDATES: Dict[str, List[str]] = {
 # Metric label -> (ordered candidates, is_percent). Order = display order on card.
 METRIC_FIELDS: List[Tuple[str, List[str], bool]] = [
     ("Engagements",         ["engagements", "engagement", "totalengagements"], False),
-    ("Reactions",           ["reactions", "reaction", "likes"], False),
+    ("Reactions",           ["reactions", "reaction"], False),
+    ("Likes",               ["likes", "love"], False),
     ("Comments",            ["comments", "comment"], False),
-    ("Shares",              ["shares", "share", "reshares"], False),
+    ("Shares",              ["shares", "share", "reshares", "reposts", "repost"], False),
+    ("Views",               ["views"], False),
+    ("Video Views",         ["videoviews"], False),
     ("Response Rate",       ["responserate"], True),
-    ("Video Views",         ["videoviews", "views"], False),
     ("Video Response Rate", ["videoresponserate"], True),
 ]
 
@@ -185,7 +196,8 @@ def _platform_from(value: Any, post_url: str) -> str:
 # --------------------------------------------------------------------------- #
 # Parse export -> cards
 # --------------------------------------------------------------------------- #
-def parse_export(file_bytes: bytes, filename: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+def parse_export(file_bytes: bytes, filename: str,
+                 max_rows: Optional[int] = None) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     rows = _read_rows(file_bytes, filename)
     if not rows:
         return [], {"error": "empty file"}
@@ -218,6 +230,12 @@ def parse_export(file_bytes: bytes, filename: str) -> Tuple[List[Dict[str, Any]]
 
         platform = _platform_from(cell(row, "platform"), post_url)
 
+        post_type = (str(cell(row, "post_type") or "")).strip()
+        ptl = post_type.lower()
+        has_media_kind = any(k in ptl for k in ("video", "image", "photo",
+                                                "gallery", "carousel", "album"))
+        is_text_only = bool(ptl) and not has_media_kind
+
         metrics = []
         for label, _cands, is_pct in METRIC_FIELDS:
             raw = cell(row, "metric::" + label)
@@ -233,13 +251,17 @@ def parse_export(file_bytes: bytes, filename: str) -> Tuple[List[Dict[str, Any]]
             "date": (str(cell(row, "date") or "")).strip(),
             "post_url": post_url,
             "thumbnail_url": thumb or None,
-            "post_type": (str(cell(row, "post_type") or "")).strip(),
+            "post_type": post_type,
             "post_format": (str(cell(row, "post_format") or "")).strip(),
-            "caption": (str(cell(row, "caption") or "")).strip(),
+            "is_text_only": is_text_only,
+            "caption": ((str(cell(row, "caption") or "")).strip()
+                        or (str(cell(row, "caption_alt") or "")).strip()),
             "metrics": metrics,
             "image_src": None,      # filled by build_cards after download
             "resolved_via": None,
         })
+        if max_rows and len(cards) >= max_rows:
+            break
 
     return cards, {"header_row": hidx + 1, "columns": mapping_report,
                    "unmapped_headers": [h for i, h in enumerate(headers)
@@ -261,6 +283,10 @@ def _fetch_thumb(card: Dict[str, Any]) -> Dict[str, Any]:
             return card
         log.info("export thumb download failed, falling back to scraper: %s",
                  card["thumbnail_url"][:80])
+    # text-only posts genuinely have no image -- don't waste a scrape on them
+    if card.get("is_text_only"):
+        card["resolved_via"] = "text post — no media"
+        return card
     # 2) fallback: scrape the external post URL
     if card.get("post_url"):
         res = resolver.resolve_one(card["post_url"])
@@ -274,8 +300,9 @@ def _fetch_thumb(card: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def build_cards(file_bytes: bytes, filename: str,
-                deadline: float = 60, workers: int = 8):
-    cards, mapping = parse_export(file_bytes, filename)
+                deadline: float = 60, workers: int = 8,
+                max_rows: Optional[int] = None):
+    cards, mapping = parse_export(file_bytes, filename, max_rows=max_rows)
     log.info("LFM export: %d card(s), header row %s, mapped: %s",
              len(cards), mapping.get("header_row"),
              {k: v for k, v in mapping.get("columns", {}).items() if v})
