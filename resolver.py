@@ -244,8 +244,25 @@ def _download_bytes(url: str) -> Optional[bytes]:
     return None
 
 
+def _ytimg_alternates(thumb_url: str) -> List[str]:
+    """Not every YouTube video has maxresdefault/sddefault -- hqdefault always
+    exists. Return progressively-safer i.ytimg fallbacks for a ytimg URL."""
+    m = re.search(r"/vi(?:_webp)?/([A-Za-z0-9_-]{11})/", thumb_url)
+    if not m:
+        return []
+    vid = m.group(1)
+    return [f"https://i.ytimg.com/vi/{vid}/{q}.jpg"
+            for q in ("maxresdefault", "sddefault", "hqdefault", "mqdefault")]
+
+
 def _save_image(url: str, thumb_url: str) -> Optional[str]:
-    data = _download_bytes(thumb_url)
+    candidates = [thumb_url] + _ytimg_alternates(thumb_url)
+    data = None
+    for cand in candidates:
+        data = _download_bytes(cand)
+        if data:
+            thumb_url = cand
+            break
     if not data:
         return None
     ext = _ext_for(thumb_url, data)

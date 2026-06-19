@@ -94,7 +94,8 @@
         {% if c.image_src %}
           <img src="{{ url_for('image', token=c.image_src) }}" loading="lazy" alt="thumbnail">
         {% else %}
-          <div class="ph">No image<br><small>{{ c.resolved_via }}</small></div>
+          <div class="ph"><b>{{ c.resolved_via or 'no image' }}</b>
+            {% if c.reason %}<br><small>{{ c.reason }}</small>{% endif %}</div>
         {% endif %}
         {% set t = (c.post_type or '')|lower %}
         {% if 'video' in t %}<span class="typeov">▶ Video</span>

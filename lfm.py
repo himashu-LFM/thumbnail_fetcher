@@ -259,6 +259,8 @@ def parse_export(file_bytes: bytes, filename: str,
             "metrics": metrics,
             "image_src": None,      # filled by build_cards after download
             "resolved_via": None,
+            "status": "pending",    # export | scraped | no_media | failed | timeout
+            "reason": "",
         })
         if max_rows and len(cards) >= max_rows:
             break
@@ -271,49 +273,97 @@ def parse_export(file_bytes: bytes, filename: str,
 # --------------------------------------------------------------------------- #
 # Download thumbnails (export URL first, scraper as fallback)
 # --------------------------------------------------------------------------- #
-def _fetch_thumb(card: Dict[str, Any]) -> Dict[str, Any]:
-    # 1) the export's own thumbnail URL = source of truth
-    if card.get("thumbnail_url"):
-        path = resolver._save_image(card["post_url"] or card["thumbnail_url"],
-                                    card["thumbnail_url"])
-        if path:
-            card["image_path"] = path
-            card["image_src"] = os.path.basename(path)
-            card["resolved_via"] = "lfm-export"
-            return card
-        log.info("export thumb download failed, falling back to scraper: %s",
-                 card["thumbnail_url"][:80])
-    # text-only posts genuinely have no image -- don't waste a scrape on them
-    if card.get("is_text_only"):
-        card["resolved_via"] = "text post — no media"
-        return card
-    # 2) fallback: scrape the external post URL
-    if card.get("post_url"):
-        res = resolver.resolve_one(card["post_url"])
-        if res.ok and res.image_path:
-            card["image_path"] = res.image_path
-            card["image_src"] = os.path.basename(res.image_path)
-            card["resolved_via"] = "fallback:" + (res.method or "scrape")
-            return card
-    card["resolved_via"] = "no image"
+def _ok(card, path, via, status):
+    card["image_path"] = path
+    card["image_src"] = os.path.basename(path)
+    card["resolved_via"] = via
+    card["status"] = status
     return card
+
+
+def _fetch_thumb(card: Dict[str, Any]) -> Dict[str, Any]:
+    """Resolve a single card's thumbnail. Best case: the export's Image URL.
+    Worst case: no/empty/dead export URL -> scrape the post URL via the full
+    resolver ladder. Always records a status + honest reason; never raises."""
+    try:
+        # 1) best case -- the export's own thumbnail URL (source of truth)
+        if card.get("thumbnail_url"):
+            path = resolver._save_image(card["post_url"] or card["thumbnail_url"],
+                                        card["thumbnail_url"])
+            if path:
+                return _ok(card, path, "export", "export")
+            log.info("export thumb URL dead, scraping post URL instead: %s",
+                     str(card["thumbnail_url"])[:80])
+
+        # 2) text-only posts genuinely have no image -- don't waste a scrape
+        if card.get("is_text_only"):
+            card["status"] = "no_media"
+            card["resolved_via"] = "text post — no media"
+            return card
+
+        # 3) worst case -- scrape the external post URL via the full ladder
+        if card.get("post_url"):
+            res = resolver.resolve_one(card["post_url"])
+            if res.ok and res.image_path:
+                return _ok(card, res.image_path,
+                           "scraped:" + (res.method or "scrape"), "scraped")
+            # honest failure reason from the resolver (region/auth/code gap)
+            card["status"] = "failed"
+            card["resolved_via"] = "scrape failed"
+            card["reason"] = res.reason or "no thumbnail found by any method"
+            return card
+
+        # no thumbnail URL and no post URL -> nothing we can do
+        card["status"] = "failed"
+        card["resolved_via"] = "no image"
+        card["reason"] = "row has neither an image URL nor a post URL"
+        return card
+    except Exception as e:                              # belt-and-braces
+        card["status"] = "failed"
+        card["resolved_via"] = "error"
+        card["reason"] = f"unexpected error: {e!r}"
+        return card
 
 
 def build_cards(file_bytes: bytes, filename: str,
                 deadline: float = 60, workers: int = 8,
                 max_rows: Optional[int] = None):
     cards, mapping = parse_export(file_bytes, filename, max_rows=max_rows)
-    log.info("LFM export: %d card(s), header row %s, mapped: %s",
-             len(cards), mapping.get("header_row"),
-             {k: v for k, v in mapping.get("columns", {}).items() if v})
+    has_thumb_col = bool(mapping.get("columns", {}).get("thumbnail_url"))
+    rows_with_thumb = sum(1 for c in cards if c.get("thumbnail_url"))
+    mode = ("export thumbnails" if rows_with_thumb else "SCRAPE-ONLY (worst case)")
+    log.info("LFM export: %d card(s), header row %s, mode=%s, thumb-col=%s",
+             len(cards), mapping.get("header_row"), mode,
+             mapping["columns"].get("thumbnail_url") or "NONE")
+    if not has_thumb_col:
+        log.warning("No Image/Thumbnail URL column detected -- every media post "
+                    "will be scraped from its post URL (slower, may be blocked).")
 
+    # Worst-case guard: scraping is slow, so give it a per-card soft cap and let
+    # the batch deadline cancel the long tail rather than hang.
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
         futs = {ex.submit(_fetch_thumb, c): c for c in cards}
         done, not_done = concurrent.futures.wait(futs, timeout=deadline)
         for f in not_done:
             f.cancel()
+            c = futs[f]
+            if c.get("status") in (None, "pending"):
+                c["status"] = "timeout"
+                c["resolved_via"] = "timed out"
+                c["reason"] = f"exceeded the {deadline:.0f}s batch deadline"
 
-    got = sum(1 for c in cards if c.get("image_src"))
-    summary = (f"{len(cards)} posts from export · {got} thumbnails fetched "
-               f"({len(cards) - got} missing).")
+    # honest breakdown
+    n = len(cards)
+    by = {"export": 0, "scraped": 0, "no_media": 0, "failed": 0, "timeout": 0}
+    for c in cards:
+        by[c.get("status", "failed")] = by.get(c.get("status", "failed"), 0) + 1
+    got = by["export"] + by["scraped"]
+    parts = [f"{n} posts ({mode})", f"{got} thumbnails resolved"]
+    if by["export"]:   parts.append(f"{by['export']} from export")
+    if by["scraped"]:  parts.append(f"{by['scraped']} scraped (fallback)")
+    if by["no_media"]: parts.append(f"{by['no_media']} text/no-media")
+    if by["failed"]:   parts.append(f"{by['failed']} failed")
+    if by["timeout"]:  parts.append(f"{by['timeout']} timed out")
+    summary = " · ".join(parts) + "."
+    log.info("BATCH summary: %s", summary)
     return cards, mapping, summary
