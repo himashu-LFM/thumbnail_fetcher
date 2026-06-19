@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Social Thumbnail Fetcher</title>
+<style>
+  :root { --bg:#0f1115; --card:#181b22; --line:#272b34; --fg:#e7e9ee;
+          --muted:#9aa3b2; --accent:#5b8cff; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:15px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
+  .wrap { max-width:760px; margin:0 auto; padding:40px 20px; }
+  h1 { font-size:26px; margin:0 0 6px; }
+  p.sub { color:var(--muted); margin:0 0 28px; }
+  .card { background:var(--card); border:1px solid var(--line);
+          border-radius:14px; padding:22px; margin-bottom:18px; }
+  label { display:block; font-weight:600; margin:0 0 8px; }
+  textarea { width:100%; min-height:160px; resize:vertical; background:#0c0e13;
+             color:var(--fg); border:1px solid var(--line); border-radius:10px;
+             padding:12px; font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .row { display:flex; gap:14px; align-items:center; flex-wrap:wrap; margin-top:14px; }
+  input[type=file] { color:var(--muted); }
+  input[type=number] { width:80px; background:#0c0e13; color:var(--fg);
+             border:1px solid var(--line); border-radius:8px; padding:7px; }
+  .or { text-align:center; color:var(--muted); margin:10px 0; font-size:13px;
+        letter-spacing:.08em; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:10px;
+           padding:13px 26px; font-size:15px; font-weight:600; cursor:pointer; }
+  button:hover { filter:brightness(1.08); }
+  .err { background:#3a1c1c; border:1px solid #5e2a2a; color:#ffb4b4;
+         padding:12px 14px; border-radius:10px; margin-bottom:18px; }
+  .hint { color:var(--muted); font-size:13px; margin-top:8px; }
+  .badges span { display:inline-block; background:#0c0e13; border:1px solid var(--line);
+         border-radius:20px; padding:3px 11px; font-size:12px; color:var(--muted);
+         margin:4px 6px 0 0; }
+  .spinner { display:none; margin-left:14px; color:var(--muted); font-size:14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Social Thumbnail Fetcher</h1>
+  <p class="sub">Paste post URLs or upload a file. Supports YouTube, Instagram,
+     TikTok, Twitter/X, Threads &amp; Facebook.</p>
+
+  {% if error %}<div class="err">{{ error }}</div>{% endif %}
+
+  <form method="post" action="/resolve" enctype="multipart/form-data"
+        onsubmit="document.getElementById('sp').style.display='inline';">
+    <div class="card">
+      <label for="urls">Paste URLs (one per line)</label>
+      <textarea id="urls" name="urls" placeholder="https://www.youtube.com/watch?v=...
+https://www.instagram.com/p/...
+https://www.tiktok.com/@user/video/..."></textarea>
+
+      <div class="or">— OR UPLOAD A FILE —</div>
+      <label for="file">Upload .txt, .csv or .xlsx</label>
+      <input type="file" id="file" name="file" accept=".txt,.csv,.xlsx,.xlsm">
+      <p class="hint">URLs are auto-extracted from any cell / line in the file.</p>
+
+      <div class="row">
+        <label style="margin:0;">Batch deadline (s)</label>
+        <input type="number" name="deadline" value="60" min="10" max="300">
+        <button type="submit">Fetch thumbnails</button>
+        <span class="spinner" id="sp">⏳ Resolving… this can take up to the deadline.</span>
+      </div>
+    </div>
+  </form>
+
+  <div class="card badges">
+    <strong style="display:block;margin-bottom:6px;">Platform reality</strong>
+    <span>YouTube → reliable</span>
+    <span>Instagram → public posts reliable, private needs cookies</span>
+    <span>TikTok → oEmbed; geo-restricted from some regions</span>
+    <span>Twitter/X · Threads · Facebook → often need headless browser + cookies</span>
+  </div>
+</div>
+</body>
+</html>

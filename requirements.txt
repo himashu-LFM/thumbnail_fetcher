@@ -1,0 +1,18 @@
+# Web UI
+Flask==3.0.3
+
+# URL resolution ladder
+yt-dlp>=2024.8.6
+httpx>=0.27.0
+requests>=2.31.0
+certifi>=2024.2.2
+parsel>=1.9.0
+Pillow>=10.0.0
+
+# Spreadsheet input parsing
+openpyxl>=3.1.0
+
+# Optional last-resort headless browser (Threads / X / some Facebook).
+# Install separately if you need it:
+#   pip install playwright && python -m playwright install chromium
+# playwright>=1.44.0

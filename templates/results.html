@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thumbnails — {{ ok }}/{{ total }} resolved</title>
+<style>
+  :root { --bg:#0f1115; --card:#181b22; --line:#272b34; --fg:#e7e9ee;
+          --muted:#9aa3b2; --accent:#5b8cff; --ok:#3ecf8e; --miss:#ff6b6b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:15px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
+  .wrap { max-width:1180px; margin:0 auto; padding:32px 20px 64px; }
+  .top { display:flex; align-items:center; justify-content:space-between;
+         flex-wrap:wrap; gap:12px; margin-bottom:20px; }
+  h1 { font-size:22px; margin:0; }
+  a.back { color:var(--accent); text-decoration:none; font-size:14px; }
+  .stat { font-size:14px; color:var(--muted); }
+  .stat b { color:var(--fg); }
+  .grid { display:grid; gap:16px;
+          grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); }
+  .item { background:var(--card); border:1px solid var(--line);
+          border-radius:13px; overflow:hidden; display:flex; flex-direction:column; }
+  .thumb { aspect-ratio:16/10; background:#0c0e13; display:flex;
+           align-items:center; justify-content:center; overflow:hidden; }
+  .thumb img { width:100%; height:100%; object-fit:cover; }
+  .placeholder { color:var(--muted); font-size:13px; text-align:center; padding:18px; }
+  .meta { padding:12px 14px; display:flex; flex-direction:column; gap:8px; flex:1; }
+  .pill { font-size:11px; text-transform:uppercase; letter-spacing:.05em;
+          padding:2px 9px; border-radius:20px; align-self:flex-start;
+          border:1px solid var(--line); color:var(--muted); }
+  .pf-youtube{color:#ff6b6b} .pf-instagram{color:#e08fff}
+  .pf-tiktok{color:#5be0e0} .pf-twitter{color:#5b8cff}
+  .pf-threads{color:#cfd3da} .pf-facebook{color:#5b8cff}
+  .urlline { font-size:12px; word-break:break-all; }
+  .urlline a { color:var(--muted); text-decoration:none; }
+  .urlline a:hover { color:var(--accent); }
+  .status { font-size:12px; }
+  .status.ok { color:var(--ok); }
+  .status.miss { color:var(--miss); }
+  .reason { font-size:11.5px; color:var(--muted); }
+  .actions { margin-top:auto; display:flex; gap:8px; }
+  .btn { flex:1; text-align:center; text-decoration:none; font-size:13px;
+         padding:8px; border-radius:8px; border:1px solid var(--line);
+         color:var(--fg); background:#0c0e13; }
+  .btn.dl { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .btn:hover { filter:brightness(1.1); }
+  .btn.disabled { opacity:.4; pointer-events:none; }
+  pre.summary { background:var(--card); border:1px solid var(--line);
+         border-radius:12px; padding:16px; white-space:pre-wrap; font-size:12.5px;
+         color:var(--muted); margin-top:28px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>Thumbnails</h1>
+    <div class="stat"><b>{{ ok }}</b> / {{ total }} resolved</div>
+    <a class="back" href="/">← Fetch more</a>
+  </div>
+
+  <div class="grid">
+    {% for r in rows %}
+    <div class="item">
+      <div class="thumb">
+        {% if r.img_src %}
+          <img src="{{ r.img_src }}" alt="thumbnail" loading="lazy">
+        {% else %}
+          <div class="placeholder">No image<br><small>{{ r.reason or 'unresolved' }}</small></div>
+        {% endif %}
+      </div>
+      <div class="meta">
+        <span class="pill pf-{{ r.platform }}">{{ r.platform }}</span>
+        <div class="urlline"><a href="{{ r.url }}" target="_blank" rel="noopener">{{ r.url }}</a></div>
+        {% if r.ok %}
+          <div class="status ok">✓ via {{ r.method }}</div>
+        {% else %}
+          <div class="status miss">✗ missed</div>
+          <div class="reason">{{ r.reason }}</div>
+        {% endif %}
+        <div class="actions">
+          {% if r.img_src %}
+            <a class="btn" href="{{ r.thumbnail_url }}" target="_blank" rel="noopener">Source</a>
+            <a class="btn dl" href="{{ url_for('download', token=r.image_path.split('\\')[-1].split('/')[-1]) }}">Download</a>
+          {% else %}
+            <span class="btn disabled">Source</span>
+            <span class="btn disabled">Download</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <pre class="summary">{{ summary }}</pre>
+</div>
+</body>
+</html>
