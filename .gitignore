@@ -1,0 +1,15 @@
+# secrets / session
+cookies.txt
+*.cookies.txt
+
+# runtime / noise
+server.log
+*.log
+__pycache__/
+*.pyc
+
+# local sample exports & resolved images
+samples/*.local.*
+
+# machine-local Claude Code settings (keep launch.json shared)
+.claude/settings.local.json

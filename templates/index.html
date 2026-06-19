@@ -40,10 +40,29 @@
 <body>
 <div class="wrap">
   <h1>Social Thumbnail Fetcher</h1>
-  <p class="sub">Paste post URLs or upload a file. Supports YouTube, Instagram,
-     TikTok, Twitter/X, Threads &amp; Facebook.</p>
+  <p class="sub">Upload an LFM platform export to rebuild its content cards, or
+     paste raw post URLs to scrape thumbnails externally.</p>
 
   {% if error %}<div class="err">{{ error }}</div>{% endif %}
+
+  <form method="post" action="/lfm" enctype="multipart/form-data"
+        onsubmit="document.getElementById('sp2').style.display='inline';">
+    <div class="card">
+      <label for="lfmfile">⭐ LFM platform export (recommended — source of truth)</label>
+      <p class="hint" style="margin-top:0;">Upload the Content export (.xlsx / .csv)
+        straight from app.listenfirstmedia.com. Thumbnails &amp; metrics come from
+        the export itself — no external scraping, no blocks.</p>
+      <input type="file" id="lfmfile" name="file" accept=".xlsx,.xlsm,.csv">
+      <div class="row">
+        <label style="margin:0;">Deadline (s)</label>
+        <input type="number" name="deadline" value="60" min="10" max="300">
+        <button type="submit">Build LFM cards</button>
+        <span class="spinner" id="sp2">⏳ Reading export &amp; fetching thumbnails…</span>
+      </div>
+    </div>
+  </form>
+
+  <div class="or">— OR SCRAPE RAW URLS (FALLBACK) —</div>
 
   <form method="post" action="/resolve" enctype="multipart/form-data"
         onsubmit="document.getElementById('sp').style.display='inline';">
