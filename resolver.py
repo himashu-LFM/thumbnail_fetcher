@@ -421,6 +421,51 @@ def _via_tiktok_oembed(url: str) -> Optional[str]:
     return None
 
 
+# tikwm caps at ~1 req/s; serialize calls across worker threads + back off.
+_TIKWM_LOCK = threading.Lock()
+_TIKWM_LAST = [0.0]
+_TIKWM_MIN_INTERVAL = 1.6
+
+
+def _tikwm_throttle():
+    with _TIKWM_LOCK:
+        wait = _TIKWM_MIN_INTERVAL - (time.time() - _TIKWM_LAST[0])
+        if wait > 0:
+            time.sleep(wait)
+        _TIKWM_LAST[0] = time.time()
+
+
+def _via_tiktok_tikwm(url: str, retries: int = 3) -> Optional[str]:
+    """tikwm.com is a public third-party that fetches TikTok server-side from an
+    unrestricted region, so it works even when tiktok.com/oembed is geo-blocked
+    for us. Returns a freshly-signed cover URL (expired ones in old exports won't
+    download; these will). Throttled + retried because tikwm caps ~1 req/s."""
+    if requests is None:
+        return None
+    endpoint = "https://www.tikwm.com/api/"
+    for attempt in range(retries):
+        _tikwm_throttle()
+        try:
+            r = requests.get(endpoint, params={"url": url, "hd": 1},
+                             headers=HTTP_HEADERS, timeout=20)
+            if r.ok and "json" in r.headers.get("content-type", "").lower():
+                data = r.json()
+                # code 0 = success; nonzero (e.g. -1 "frequency") = rate-limited
+                if data.get("code") == 0 and data.get("data"):
+                    d = data["data"]
+                    for key in ("origin_cover", "cover", "ai_dynamic_cover"):
+                        u = d.get(key)
+                        if u:
+                            return u if u.startswith("http") else "https://www.tikwm.com" + u
+                    return None
+                log.debug("tikwm rate-limited (attempt %d): %s",
+                          attempt + 1, data.get("msg"))
+        except Exception as e:
+            log.debug("tikwm attempt %d failed: %s", attempt + 1, e)
+        time.sleep(1.0 + attempt)   # linear back-off between retries
+    return None
+
+
 def _twitter_status_id(url: str) -> Optional[str]:
     m = re.search(r"/status(?:es)?/(\d+)", url)
     return m.group(1) if m else None
@@ -650,6 +695,10 @@ def _resolve_thumbnail_url(url: str, platform: str):
 
     # Rung 3: platform-specific public endpoints
     if platform == "tiktok":
+        # tikwm first -- it works from geo-blocked regions; oembed is the backup
+        t = _try("tiktok-tikwm", lambda: _via_tiktok_tikwm(url))
+        if t:
+            return t, "tiktok-tikwm", ""
         t = _try("tiktok-oembed", lambda: _via_tiktok_oembed(url))
         if t:
             return t, "tiktok-oembed", ""
@@ -674,8 +723,8 @@ def _resolve_thumbnail_url(url: str, platform: str):
 def _diagnose(platform: str, tried: List[str]) -> str:
     base = f"all rungs failed ({', '.join(tried)})"
     hint = {
-        "tiktok": "TikTok geo/IP restriction is the usual cause -- verify from an "
-                  "unrestricted (e.g. US) host; this is network/region, not a code bug.",
+        "tiktok": "tikwm + oembed both failed -- tikwm may be rate-limiting "
+                  "(it caps ~1 req/s); retry, or set a US proxy via THUMBNAIL_PROXY.",
         "instagram": "likely a private post or login wall -- supply cookies via "
                      "THUMBNAIL_COOKIEFILE.",
         "twitter": "X login/JS gate -- needs the headless browser rung "
