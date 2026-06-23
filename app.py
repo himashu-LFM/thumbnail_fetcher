@@ -36,6 +36,7 @@ logging.basicConfig(
 logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
 import resolver
+import lfm
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB uploads
@@ -162,6 +163,53 @@ def resolve():
     summary = resolver.summarize(items)
     return render_template("results.html", rows=rows, total=total, ok=ok,
                            summary=summary)
+
+
+@app.route("/lfm", methods=["POST"])
+def lfm_export():
+    """Primary path: ingest an LFM platform export and render the exact
+    platform cards, using the export's own thumbnail URLs (source of truth)."""
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return render_template("index.html",
+                               error="Please choose an LFM export (.xlsx or .csv).")
+    try:
+        deadline = float(request.form.get("deadline", "60"))
+    except ValueError:
+        deadline = 60.0
+    try:
+        max_rows = int(request.form.get("max_rows", "20"))
+        if max_rows <= 0:
+            max_rows = None        # 0 / blank => all rows
+    except ValueError:
+        max_rows = 20
+
+    data = f.read()
+    try:
+        cards, mapping, summary = asyncio.run(
+            asyncio.to_thread(lfm.build_cards, data, f.filename, deadline, 8, max_rows)
+        )
+    except Exception as e:
+        return render_template("index.html",
+                               error=f"Could not read that export: {e}")
+    if not cards:
+        return render_template(
+            "index.html",
+            error="No post rows detected in that file. Is it an LFM Content "
+                  "export? Detected mapping: " + str(mapping.get("columns")))
+    return render_template("lfm_results.html", cards=cards, summary=summary,
+                           mapping=mapping)
+
+
+@app.route("/demo")
+def demo():
+    """Render the bundled sample LFM export as cards (for previewing the UI)."""
+    p = os.path.join(os.path.dirname(__file__), "samples", "lfm_export_sample.csv")
+    with open(p, "rb") as fh:
+        data = fh.read()
+    cards, mapping, summary = lfm.build_cards(data, "lfm_export_sample.csv", 60, 8)
+    return render_template("lfm_results.html", cards=cards, summary=summary,
+                           mapping=mapping)
 
 
 @app.route("/image/<token>")

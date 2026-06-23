@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LFM Content — {{ cards|length }} posts</title>
+<style>
+  :root{
+    --bg:#eef1f6; --card:#fff; --line:#e4e6eb; --ink:#1c1e21; --muted:#65676b;
+    --blue:#1b74e4; --gold:#ffe08a; --goldln:#f0c030; --green:#1f9d55; --red:#d93025;
+    --a1:#6d8bff; --a2:#a855f7;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;color:var(--ink);
+       font:14px/1.45 -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+       background:
+         radial-gradient(60% 50% at 100% 0%, rgba(168,85,247,.08), transparent 60%),
+         radial-gradient(50% 40% at 0% 0%, rgba(109,139,255,.10), transparent 60%),
+         var(--bg);}
+  .wrap{max-width:1340px;margin:0 auto;padding:0 18px 70px}
+
+  /* sticky glass header */
+  .bar{position:sticky;top:0;z-index:10;margin:0 -18px 22px;padding:16px 22px;
+       display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+       background:rgba(255,255,255,.72);backdrop-filter:blur(14px);
+       border-bottom:1px solid var(--line);animation:drop .5s ease both}
+  @keyframes drop{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:none}}
+  .bar h1{font-size:18px;margin:0;font-weight:800;letter-spacing:-.01em}
+  .pillcount{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);
+             background:#fff;border:1px solid var(--line);border-radius:99px;padding:6px 13px}
+  .pillcount b{color:var(--green);font-size:15px}
+  .summary{color:var(--muted);font-size:12.5px;flex:1;min-width:200px}
+  .back{margin-left:auto;text-decoration:none;color:#fff;font-size:13px;font-weight:600;
+        background:linear-gradient(100deg,var(--a1),var(--a2));padding:9px 16px;border-radius:10px;
+        box-shadow:0 8px 20px -8px rgba(109,139,255,.8);transition:.2s}
+  .back:hover{transform:translateY(-2px);box-shadow:0 12px 26px -8px rgba(168,85,247,.9)}
+
+  .grid{display:grid;gap:18px;grid-template-columns:repeat(auto-fill,minmax(250px,1fr))}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;
+        display:flex;flex-direction:column;box-shadow:0 1px 3px rgba(0,0,0,.06);
+        transition:transform .28s cubic-bezier(.2,.8,.2,1),box-shadow .28s,border-color .28s;
+        animation:pop .55s cubic-bezier(.2,.8,.2,1) both}
+  @keyframes pop{from{opacity:0;transform:translateY(22px) scale(.98)}to{opacity:1;transform:none}}
+  .card:hover{transform:translateY(-6px);box-shadow:0 18px 40px -16px rgba(27,116,228,.45);
+              border-color:rgba(109,139,255,.5)}
+
+  .chead{display:flex;align-items:center;gap:8px;padding:11px 13px 7px}
+  .rank{color:#fff;font-size:11px;font-weight:700;min-width:20px;height:20px;border-radius:6px;
+        display:flex;align-items:center;justify-content:center;
+        background:linear-gradient(135deg,var(--a1),var(--a2))}
+  .brand{color:var(--blue);font-weight:700;font-size:13px;text-decoration:none;flex:1;
+         white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .brand:hover{text-decoration:underline}
+  .picon{width:20px;height:20px;flex:0 0 auto;transition:transform .25s}
+  .card:hover .picon{transform:scale(1.15) rotate(-4deg)}
+  .date{color:var(--muted);font-size:11.5px;padding:0 13px 9px}
+
+  .thumb{position:relative;aspect-ratio:1/1;background:#0d0f14;display:flex;
+         align-items:center;justify-content:center;overflow:hidden}
+  .thumb img{width:100%;height:100%;object-fit:cover;transition:transform .5s cubic-bezier(.2,.8,.2,1);
+             opacity:0;animation:fade .6s ease forwards}
+  @keyframes fade{to{opacity:1}}
+  .card:hover .thumb img{transform:scale(1.07)}
+  .thumb::after{content:"";position:absolute;inset:0;background:linear-gradient(transparent 60%,rgba(0,0,0,.25));
+                opacity:0;transition:.3s}
+  .card:hover .thumb::after{opacity:1}
+  .ph{color:#aeb4c0;font-size:12px;text-align:center;padding:18px;line-height:1.5}
+  .ph b{color:#cdd2db;display:block;margin-bottom:4px;text-transform:capitalize}
+
+  /* status pill on thumbnail */
+  .spill{position:absolute;top:9px;right:9px;z-index:2;font-size:10px;font-weight:700;
+         letter-spacing:.03em;text-transform:uppercase;padding:3px 8px;border-radius:99px;
+         color:#fff;backdrop-filter:blur(4px);box-shadow:0 2px 8px rgba(0,0,0,.3)}
+  .s-export{background:rgba(31,157,85,.92)}
+  .s-scraped{background:rgba(27,116,228,.92)}
+  .s-no_media{background:rgba(120,128,140,.92)}
+  .s-failed{background:rgba(217,48,37,.92)}
+  .s-timeout{background:rgba(217,119,6,.92)}
+
+  .badges{display:flex;align-items:center;justify-content:space-between;padding:9px 13px 4px;font-size:12px}
+  .btype{display:flex;align-items:center;gap:5px;font-weight:700}
+  .btype.video{color:var(--red)} .btype.gallery,.btype.photo{color:var(--green)} .btype.other{color:var(--muted)}
+  .bfmt{color:var(--muted)}
+  .cap{padding:4px 13px 10px;color:#3a3b3c;font-size:12.5px;
+       display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:34px}
+
+  .metrics{padding:2px 13px 6px;border-top:1px solid var(--line)}
+  .mrow{display:flex;align-items:center;justify-content:space-between;padding:3px 0;font-size:12.5px}
+  .mrow .ml{color:var(--muted)}
+  .mrow .mv{font-weight:700}
+  .mrow .mv.hl{background:var(--gold);border:1px solid var(--goldln);border-radius:5px;padding:0 8px;
+               box-shadow:0 1px 4px rgba(240,192,48,.4)}
+
+  .foot{display:flex;gap:10px;align-items:center;padding:10px 13px;border-top:1px solid var(--line);font-size:12px}
+  .foot a{color:var(--blue);text-decoration:none;transition:.15s}
+  .foot a:hover{opacity:.7}
+  .dl{margin-left:auto;display:inline-flex;align-items:center;gap:5px;color:#fff !important;
+      background:linear-gradient(100deg,var(--a1),var(--a2));padding:7px 13px;border-radius:9px;font-weight:600;
+      transition:.2s;box-shadow:0 6px 16px -8px rgba(109,139,255,.9)}
+  .dl:hover{transform:translateY(-2px);opacity:1 !important;box-shadow:0 10px 22px -8px rgba(168,85,247,.95)}
+</style>
+</head>
+<body>
+{# ---- platform icons (defined before use) ---- #}
+{% macro picon(p) %}
+  {% if p == 'facebook' %}
+    <svg class="picon" viewBox="0 0 24 24"><rect width="24" height="24" rx="5" fill="#1877F2"/><path fill="#fff" d="M15.5 8.5H14c-.4 0-.7.3-.7.8V11h2.2l-.3 2.2h-1.9V19h-2.3v-5.8H9.3V11h1.7V8.8c0-1.7 1-2.8 2.6-2.8h1.9z"/></svg>
+  {% elif p == 'instagram' %}
+    <svg class="picon" viewBox="0 0 24 24"><defs><linearGradient id="ig" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#FED576"/><stop offset=".35" stop-color="#F47133"/><stop offset=".7" stop-color="#BC3081"/><stop offset="1" stop-color="#4F5BD5"/></linearGradient></defs><rect width="24" height="24" rx="6" fill="url(#ig)"/><rect x="5" y="5" width="14" height="14" rx="4.5" fill="none" stroke="#fff" stroke-width="1.6"/><circle cx="12" cy="12" r="3.3" fill="none" stroke="#fff" stroke-width="1.6"/><circle cx="16.4" cy="7.6" r="1" fill="#fff"/></svg>
+  {% elif p == 'twitter' %}
+    <svg class="picon" viewBox="0 0 24 24"><rect width="24" height="24" rx="5" fill="#000"/><path fill="#fff" d="M13.7 10.7 18 6h-1.5l-3.6 4-2.9-4H6l4.6 6.4L6 18h1.5l3.8-4.3L14.5 18H18zM8 7.1h1.7l6.4 8.8H14.3z"/></svg>
+  {% elif p == 'tiktok' %}
+    <svg class="picon" viewBox="0 0 24 24"><rect width="24" height="24" rx="5" fill="#000"/><path fill="#fff" d="M16.5 8.6c-1-.1-1.9-.6-2.5-1.4v5.9a3.9 3.9 0 1 1-3.9-3.9c.2 0 .4 0 .6.1v2a1.9 1.9 0 1 0 1.3 1.8V5h1.9c.1 1.3 1.1 2.4 2.4 2.6z"/><path fill="#25F4EE" d="M15.9 8.2c-.9-.3-1.6-.9-2-1.7.3.9 1 1.6 2 1.7z"/></svg>
+  {% elif p == 'youtube' %}
+    <svg class="picon" viewBox="0 0 24 24"><rect y="5" width="24" height="14" rx="4" fill="#FF0000"/><path fill="#fff" d="M10 8.5 16 12l-6 3.5z"/></svg>
+  {% else %}
+    <svg class="picon" viewBox="0 0 24 24"><rect width="24" height="24" rx="5" fill="#9aa0a6"/></svg>
+  {% endif %}
+{% endmacro %}
+
+<div class="wrap">
+  <div class="bar">
+    <h1>📋 Content</h1>
+    <span class="pillcount"><b>{{ cards|selectattr('image_src')|list|length }}</b>&nbsp;/ {{ cards|length }} with thumbnails</span>
+    <span class="summary">{{ summary }}</span>
+    <a class="back" href="/">← New batch</a>
+  </div>
+
+  <div class="grid">
+    {% for c in cards %}
+    <div class="card" style="animation-delay:{{ (loop.index0 * 0.045)|round(3) }}s">
+      <div class="chead">
+        <span class="rank">{{ c.rank }}</span>
+        {% if c.post_url %}<a class="brand" href="{{ c.post_url }}" target="_blank" rel="noopener">{{ c.brand }}</a>
+        {% else %}<span class="brand">{{ c.brand }}</span>{% endif %}
+        {{ picon(c.platform) }}
+      </div>
+      <div class="date">{{ c.date }}</div>
+
+      <div class="thumb">
+        {% if c.status %}<span class="spill s-{{ c.status }}">{{ c.status|replace('_',' ') }}</span>{% endif %}
+        {% if c.image_src %}
+          <img src="{{ url_for('image', token=c.image_src) }}" loading="lazy" alt="thumbnail">
+        {% else %}
+          <div class="ph"><b>{{ c.resolved_via or 'no image' }}</b>{% if c.reason %}<small>{{ c.reason }}</small>{% endif %}</div>
+        {% endif %}
+      </div>
+
+      <div class="badges">
+        {% set t = (c.post_type or '')|lower %}
+        {% if 'video' in t %}<span class="btype video">🎬 {{ c.post_type or 'Video' }}</span>
+        {% elif 'gallery' in t or 'carousel' in t or 'album' in t %}<span class="btype gallery">🖼 {{ c.post_type or 'Gallery' }}</span>
+        {% elif 'photo' in t or 'image' in t %}<span class="btype photo">🖼 {{ c.post_type or 'Photo' }}</span>
+        {% elif c.post_type %}<span class="btype other">{{ c.post_type }}</span>{% else %}<span></span>{% endif %}
+        {% if c.post_format %}<span class="bfmt">{{ c.post_format }}</span>{% endif %}
+      </div>
+
+      <div class="cap">{{ c.caption }}</div>
+
+      {% if c.metrics %}
+      <div class="metrics">
+        {% for m in c.metrics %}
+        <div class="mrow"><span class="ml">{{ m.label }}</span>
+          <span class="mv {{ 'hl' if m.highlight else '' }}">{{ m.value }}</span></div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <div class="foot">
+        <a href="#">Tag</a><span style="color:var(--line)">|</span><a href="#">Daily Analysis</a>
+        {% if c.image_src %}<a class="dl" href="{{ url_for('download', token=c.image_src) }}">⬇ Download</a>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+</body>
+</html>
