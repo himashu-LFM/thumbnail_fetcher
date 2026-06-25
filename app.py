@@ -327,4 +327,6 @@ def api_resolve():
 
 if __name__ == "__main__":
     print(f"Export dir: {resolver.EXPORT_DIR}")
-    app.run(host="127.0.0.1", port=5000, debug=False, threaded=True)
+    # 0.0.0.0 = listen on all interfaces so the EC2 instance is reachable from
+    # outside (not just localhost). Open TCP 5000 in the EC2 security group.
+    app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
