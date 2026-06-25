@@ -156,7 +156,37 @@
     </div>
   </form>
 
-  <div class="or">OR SCRAPE RAW URLS (FALLBACK)</div>
+  <div class="or">OR EXTRACT FULL DATA → EXCEL</div>
+
+  <!-- NEW: image + details -> Excel -->
+  <form method="post" action="/extract" enctype="multipart/form-data"
+        onsubmit="document.getElementById('sp3').style.display='inline-flex';">
+    <div class="card secondary">
+      <div class="ttl">📦 Image + details → Excel</div>
+      <p class="hint">Give a file (or paste) of post URLs. Returns image + title, caption, author, likes, comments, views, date — shown here and as a downloadable Excel (missing cells highlighted light-red).</p>
+      <textarea name="urls" placeholder="https://www.tiktok.com/@user/video/…
+https://www.youtube.com/watch?v=…
+https://www.instagram.com/p/…"></textarea>
+
+      <label class="drop" id="drop3" style="margin-top:14px;padding:18px">
+        <input type="file" name="file" accept=".txt,.csv,.xlsx,.xlsm" onchange="pick(this,'fn3')">
+        <span class="ic" style="font-size:22px">📁</span>
+        <span style="color:var(--muted);font-size:13px">…or upload a .txt / .csv / .xlsx of links</span>
+        <div class="fname" id="fn3"></div>
+      </label>
+
+      <div class="row">
+        <div class="field"><label>Rows</label>
+          <input type="number" name="max_rows" value="0" min="0" max="2000" title="0 = all"></div>
+        <div class="field"><label>Deadline (s)</label>
+          <input type="number" name="deadline" value="120" min="10" max="600"></div>
+        <button class="btn" type="submit">Extract → Excel →</button>
+        <span class="spinner" id="sp3"><span class="sp"></span> Extracting image + details…</span>
+      </div>
+    </div>
+  </form>
+
+  <div class="or">OR SCRAPE RAW URLS (THUMBNAIL ONLY)</div>
 
   <!-- SECONDARY: raw URL scrape -->
   <form method="post" action="/resolve" enctype="multipart/form-data"
@@ -203,7 +233,7 @@ https://www.tiktok.com/@user/video/…"></textarea>
     document.getElementById(target).textContent = f ? ('✓ ' + f.name) : '';
   }
   // dragover highlight
-  ['drop1','drop2'].forEach(function(id){
+  ['drop1','drop2','drop3'].forEach(function(id){
     var el=document.getElementById(id); if(!el) return;
     ['dragenter','dragover'].forEach(function(e){el.addEventListener(e,function(ev){ev.preventDefault();el.classList.add('drag');});});
     ['dragleave','drop'].forEach(function(e){el.addEventListener(e,function(ev){ev.preventDefault();el.classList.remove('drag');});});

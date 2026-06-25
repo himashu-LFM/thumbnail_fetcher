@@ -124,6 +124,7 @@
     <h1>📋 Content</h1>
     <span class="pillcount"><b>{{ cards|selectattr('image_src')|list|length }}</b>&nbsp;/ {{ cards|length }} with thumbnails</span>
     <span class="summary">{{ summary }}</span>
+    {% if xlsx %}<a class="back" style="background:linear-gradient(100deg,#1f9d55,#16a34a)" href="{{ url_for('download', token=xlsx) }}">⬇ Export to Excel (all data)</a>{% endif %}
     <a class="back" href="/">← New batch</a>
   </div>
 

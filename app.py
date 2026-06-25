@@ -19,8 +19,10 @@ import os
 import re
 import io
 import sys
+import uuid
 import logging
 import asyncio
+import concurrent.futures as _cf
 from flask import (
     Flask, request, render_template, send_file, abort, url_for, jsonify
 )
@@ -37,6 +39,7 @@ logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
 import resolver
 import lfm
+import extract_to_excel as x2e
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB uploads
@@ -165,6 +168,66 @@ def resolve():
                            summary=summary)
 
 
+@app.route("/extract", methods=["POST"])
+def extract():
+    """Raw URLs -> image + details (title/caption/author/likes/comments/views/
+    date), shown on the page AND downloadable as an Excel (embedded images,
+    missing cells highlighted light-red)."""
+    urls = _collect_urls(request)
+    if not urls:
+        return render_template("index.html",
+                               error="No URLs found. Paste links or upload a "
+                                     ".txt / .csv / .xlsx file.")
+    try:
+        deadline = float(request.form.get("deadline", "120"))
+    except ValueError:
+        deadline = 120.0
+    try:
+        max_rows = int(request.form.get("max_rows", "0")) or None
+    except ValueError:
+        max_rows = None
+    if max_rows:
+        urls = urls[:max_rows]
+
+    rows = [None] * len(urls)
+    with _cf.ThreadPoolExecutor(max_workers=8) as ex:
+        futs = {ex.submit(x2e.extract_one, u): i for i, u in enumerate(urls)}
+        done, not_done = _cf.wait(futs, timeout=deadline)
+        for f in not_done:
+            f.cancel()
+        for f, i in futs.items():
+            if f in done:
+                try:
+                    rows[i] = f.result()
+                except Exception as e:
+                    rows[i] = {c: "" for c in x2e.COLS}
+                    rows[i].update(url=urls[i], status="failed",
+                                   failure_reason=f"error: {type(e).__name__}",
+                                   image_file="")
+            else:
+                rows[i] = {c: "" for c in x2e.COLS}
+                rows[i].update(url=urls[i], status="failed",
+                               failure_reason=f"timed out ({deadline:.0f}s)",
+                               image_file="")
+
+    # build the downloadable Excel into the export dir
+    xlsx_name = None
+    try:
+        xlsx_name = f"extract_{uuid.uuid4().hex[:12]}.xlsx"
+        x2e.write_xlsx(rows, os.path.join(resolver.EXPORT_DIR, xlsx_name))
+    except Exception as e:
+        logging.getLogger("app").warning("xlsx build failed: %s", e)
+        xlsx_name = None
+
+    view = []
+    for r in rows:
+        img = r.get("image_file") or ""
+        view.append({**r, "img_token": os.path.basename(img) if img else None})
+    ok = sum(1 for r in rows if r.get("status") == "ok")
+    return render_template("extract_results.html", rows=view, total=len(rows),
+                           ok=ok, xlsx=xlsx_name)
+
+
 @app.route("/lfm", methods=["POST"])
 def lfm_export():
     """Primary path: ingest an LFM platform export and render the exact
@@ -197,8 +260,21 @@ def lfm_export():
             "index.html",
             error="No post rows detected in that file. Is it an LFM Content "
                   "export? Detected mapping: " + str(mapping.get("columns")))
+    # fill caption/details for rows the export didn't carry (scrape the post URL)
+    try:
+        x2e.enrich_cards(cards, workers=8, deadline=deadline)
+    except Exception as e:
+        logging.getLogger("app").warning("enrich_cards failed: %s", e)
+    # build a downloadable Excel of ALL cards (embedded images + all columns)
+    xlsx_name = None
+    try:
+        xlsx_name = f"lfm_{uuid.uuid4().hex[:12]}.xlsx"
+        x2e.write_cards_xlsx(cards, os.path.join(resolver.EXPORT_DIR, xlsx_name))
+    except Exception as e:
+        logging.getLogger("app").warning("lfm xlsx build failed: %s", e)
+        xlsx_name = None
     return render_template("lfm_results.html", cards=cards, summary=summary,
-                           mapping=mapping)
+                           mapping=mapping, xlsx=xlsx_name)
 
 
 @app.route("/demo")
