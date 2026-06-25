@@ -359,6 +359,18 @@ def api_extract():
                 rows[i] = {"url": urls[i], "status": "failed",
                            "failure_reason": f"timed out ({deadline:.0f}s)"}
 
+    # format=xlsx -> return a ready Excel (embedded images + all columns,
+    # missing cells light-red); default -> JSON.
+    fmt = (request.args.get("format") or payload.get("format") or "json").lower()
+    if fmt in ("xlsx", "excel"):
+        try:
+            xlsx_name = f"extract_{uuid.uuid4().hex[:12]}.xlsx"
+            x2e.write_xlsx(rows, os.path.join(resolver.EXPORT_DIR, xlsx_name))
+            return send_file(os.path.join(resolver.EXPORT_DIR, xlsx_name),
+                             as_attachment=True, download_name="extracted_data.xlsx")
+        except Exception as e:
+            return jsonify({"error": f"xlsx build failed: {type(e).__name__}: {e}"}), 500
+
     items, ok = [], 0
     for r in rows:
         if r.get("status") == "ok":
