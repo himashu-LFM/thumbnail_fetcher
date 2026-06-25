@@ -311,6 +311,79 @@ def download(token):
     return send_file(path, as_attachment=True, download_name=safe)
 
 
+@app.route("/api/extract", methods=["POST"])
+def api_extract():
+    """Full-data JSON API for team skills.
+
+    POST JSON: {"urls": ["...", "..."], "max_rows": 0, "deadline": 120}
+    Header (optional): X-API-Key: <key>   (required only if THUMBNAIL_API_KEY is set)
+
+    Returns: {"total": N, "ok": M, "items": [ {url, platform, status, title,
+              caption, author, likes, comments, views, date, image_url,
+              image_file_url, failure_reason}, ... ]}
+    image_file_url is a link on THIS server to the downloaded image (stable even
+    if the platform URL expires); empty if no image was fetched.
+    """
+    required = os.environ.get("THUMBNAIL_API_KEY")
+    if required:
+        key = request.headers.get("X-API-Key") or request.args.get("key")
+        if key != required:
+            return jsonify({"error": "invalid or missing API key"}), 401
+
+    payload = request.get_json(silent=True) or {}
+    urls = _dedupe([u for u in (payload.get("urls") or []) if u])
+    if not urls:
+        return jsonify({"error": "no urls provided (send JSON {\"urls\": [...]})"}), 400
+    try:
+        deadline = float(payload.get("deadline", 120))
+    except (TypeError, ValueError):
+        deadline = 120.0
+    mr = payload.get("max_rows")
+    if isinstance(mr, int) and mr > 0:
+        urls = urls[:mr]
+
+    rows = [None] * len(urls)
+    with _cf.ThreadPoolExecutor(max_workers=8) as ex:
+        futs = {ex.submit(x2e.extract_one, u): i for i, u in enumerate(urls)}
+        done, not_done = _cf.wait(futs, timeout=deadline)
+        for f in not_done:
+            f.cancel()
+        for f, i in futs.items():
+            if f in done:
+                try:
+                    rows[i] = f.result()
+                except Exception as e:
+                    rows[i] = {"url": urls[i], "status": "failed",
+                               "failure_reason": f"error: {type(e).__name__}"}
+            else:
+                rows[i] = {"url": urls[i], "status": "failed",
+                           "failure_reason": f"timed out ({deadline:.0f}s)"}
+
+    items, ok = [], 0
+    for r in rows:
+        if r.get("status") == "ok":
+            ok += 1
+        img_file = r.get("image_file") or ""
+        img_file_url = (url_for("image", token=os.path.basename(img_file), _external=True)
+                        if img_file else "")
+        items.append({
+            "url": r.get("url", ""),
+            "platform": r.get("platform", ""),
+            "status": r.get("status", ""),
+            "title": r.get("title", ""),
+            "caption": r.get("caption", ""),
+            "author": r.get("author", ""),
+            "likes": r.get("likes", ""),
+            "comments": r.get("comments", ""),
+            "views": r.get("views", ""),
+            "date": r.get("date", ""),
+            "image_url": r.get("image_url", ""),
+            "image_file_url": img_file_url,
+            "failure_reason": r.get("failure_reason", ""),
+        })
+    return jsonify({"total": len(items), "ok": ok, "items": items})
+
+
 @app.route("/api/resolve", methods=["POST"])
 def api_resolve():
     """JSON API: {"urls": [...]} -> resolved results."""
