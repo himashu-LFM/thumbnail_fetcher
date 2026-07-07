@@ -27,6 +27,9 @@ from flask import (
     Flask, request, render_template, send_file, abort, url_for, jsonify
 )
 
+from werkzeug.middleware.proxy_fix import ProxyFix
+
+
 # --- terminal logging: show the resolver working in real time -------------- #
 logging.basicConfig(
     level=logging.INFO,
@@ -46,7 +49,7 @@ app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB uploads
 
 URL_RE = re.compile(r"https?://[^\s,;'\"]+", re.I)
 
-
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1, x_prefix=1)
 # --------------------------------------------------------------------------- #
 # URL extraction from the three input methods
 # --------------------------------------------------------------------------- #
@@ -370,6 +373,77 @@ def api_extract():
                              as_attachment=True, download_name="extracted_data.xlsx")
         except Exception as e:
             return jsonify({"error": f"xlsx build failed: {type(e).__name__}: {e}"}), 500
+
+    items, ok = [], 0
+    for r in rows:
+        if r.get("status") == "ok":
+            ok += 1
+        img_file = r.get("image_file") or ""
+        img_file_url = (url_for("image", token=os.path.basename(img_file), _external=True)
+                        if img_file else "")
+        items.append({
+            "url": r.get("url", ""),
+            "platform": r.get("platform", ""),
+            "status": r.get("status", ""),
+            "title": r.get("title", ""),
+            "caption": r.get("caption", ""),
+            "author": r.get("author", ""),
+            "likes": r.get("likes", ""),
+            "comments": r.get("comments", ""),
+            "views": r.get("views", ""),
+            "date": r.get("date", ""),
+            "image_url": r.get("image_url", ""),
+            "image_file_url": img_file_url,
+            "failure_reason": r.get("failure_reason", ""),
+        })
+    return jsonify({"total": len(items), "ok": ok, "items": items})
+
+
+@app.route("/api/get", methods=["GET"])
+def api_get():
+    """GET version of /api/extract for callers that can only do GET requests
+    (e.g. the Cowork `web_fetch` tool, which cannot POST).
+
+    Usage:  /api/get?urls=url1,url2,url3&deadline=120
+      - urls: comma / space / newline separated post URLs
+      - deadline: optional, seconds (default 120)
+    Returns the SAME JSON as POST /api/extract:
+      {"total": N, "ok": M, "items": [ {url, platform, status, title, caption,
+       author, likes, comments, views, date, image_url, image_file_url,
+       failure_reason}, ... ]}
+    """
+    required = os.environ.get("THUMBNAIL_API_KEY")
+    if required:
+        key = request.headers.get("X-API-Key") or request.args.get("key")
+        if key != required:
+            return jsonify({"error": "invalid or missing API key"}), 401
+
+    raw = request.args.get("urls", "") or ""
+    parts = raw.replace("\n", " ").replace("\r", " ").replace(",", " ").split()
+    urls = _dedupe([u.strip() for u in parts if u.strip().startswith("http")])
+    if not urls:
+        return jsonify({"error": "no urls (use ?urls=url1,url2,...)"}), 400
+    try:
+        deadline = float(request.args.get("deadline", 120))
+    except (TypeError, ValueError):
+        deadline = 120.0
+
+    rows = [None] * len(urls)
+    with _cf.ThreadPoolExecutor(max_workers=8) as ex:
+        futs = {ex.submit(x2e.extract_one, u): i for i, u in enumerate(urls)}
+        done, not_done = _cf.wait(futs, timeout=deadline)
+        for f in not_done:
+            f.cancel()
+        for f, i in futs.items():
+            if f in done:
+                try:
+                    rows[i] = f.result()
+                except Exception as e:
+                    rows[i] = {"url": urls[i], "status": "failed",
+                               "failure_reason": f"error: {type(e).__name__}"}
+            else:
+                rows[i] = {"url": urls[i], "status": "failed",
+                           "failure_reason": f"timed out ({deadline:.0f}s)"}
 
     items, ok = [], 0
     for r in rows:
